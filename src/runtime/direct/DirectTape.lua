@@ -1,7 +1,7 @@
 local isTensor = torch.isTensor
 local overload = require 'autograd.overload'
 local DirectNode = require 'autograd.runtime.direct.DirectNode'
-
+require 'pl'
 local DirectTape = { }
 local assignmentMap = { }
 local reverseAssignmentMap = { }
@@ -51,11 +51,17 @@ function nodeApply(fun, gradFun, ...)
       end
       local profileId = nil
       local startTime = sys.clock()
+      local startMem
+      _,_, startMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
       local value = fun.fn(table.unpack(values))
       if currentProfiler ~= nil then
          local elapsedTime = sys.clock() - startTime
+         local endMem
+      _,_, endMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
+         local takenMem  = tonumber(endMem) - tonumber(startMem)
          profileId = currentProfiler:mark(fun, 2)
-         currentProfiler:measureForward(profileId, elapsedTime)
+         currentProfiler:measureForward(profileId, elapsedTime, takenMem)
+        print(takenMem)
       end
       local node = nil
       local tape = currentTape
@@ -138,6 +144,7 @@ function DirectTape.gradOnly(tape, arg, argnum, allAns, gradOutput)
    for i=tape.nextIndex-1,1,-1 do
       local node = tape[i]
       local elapsedTime = 0
+      local takenMem = 0.0
       for iarg=#node.args,1,-1 do
          local thisArg = node.args[iarg]
          if getmetatable(thisArg) == DirectNode then
@@ -151,8 +158,13 @@ function DirectTape.gradOnly(tape, arg, argnum, allAns, gradOutput)
             local gf = (node.gradFun or {})[iarg]
             if gf ~= nil then
                local startTime = sys.clock()
+               local startMem
+	           _,_, startMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
                local gradUpdate = (gf)(node.outgrad, node.value, table.unpack(node.argValues))
+               local endMem
+               _,_, endMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
                elapsedTime = elapsedTime + (sys.clock() - startTime)
+               takenMem = takenMem + (tonumber(endMem)-tonumber(startMem))
                if gradUpdate then
                   if thisArg.outgrad == nil or thisArg.outgrad == 0 then
                      thisArg.outgrad = gradUpdate
@@ -182,8 +194,13 @@ function DirectTape.gradOnly(tape, arg, argnum, allAns, gradOutput)
                   end
                end
                local startTime = sys.clock()
+               local startMem
+	           _,_, startMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
                local gradUpdate = (node.gradFun[iarg])(node.outgrad, node.value, table.unpack(node.argValues))
+               local endMem
+	           _,_, endMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
                elapsedTime = elapsedTime + (sys.clock() - startTime)
+               takenMem = takenMem + (tonumber(endMem) - tonumber(startMem))
                local la = #thisArg
                for isubArg=1,la do
                   if gradUpdate[isubArg] then
@@ -201,7 +218,7 @@ function DirectTape.gradOnly(tape, arg, argnum, allAns, gradOutput)
          end
       end
       if currentProfiler ~= nil and node.profileId ~= nil then
-         currentProfiler:measureBackward(node.profileId, elapsedTime)
+         currentProfiler:measureBackward(node.profileId, elapsedTime, takenMem)
       end
    end
    -- Now spit out the grads
