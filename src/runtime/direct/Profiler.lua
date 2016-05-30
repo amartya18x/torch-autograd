@@ -1,7 +1,38 @@
 local util = require 'autograd.util'
+local ffi = require 'ffi'
 
 local Profiler = { }
 Profiler.__index = Profiler
+
+ffi.cdef([[
+typedef long time_t;
+typedef struct timeval {
+ time_t tv_sec;
+ time_t tv_usec;
+};
+struct rusage {
+             struct timeval ru_utime; /* user time used */
+             struct timeval ru_stime; /* system time used */
+             long ru_maxrss;          /* integral max resident set size */
+             long ru_ixrss;           /* integral shared text memory size */
+             long ru_idrss;           /* integral unshared data size */
+             long ru_isrss;           /* integral unshared stack size */
+             long ru_minflt;          /* page reclaims */
+             long ru_majflt;          /* page faults */
+             long ru_nswap;           /* swaps */
+             long ru_inblock;         /* block input operations */
+             long ru_oublock;         /* block output operations */
+             long ru_msgsnd;          /* messages sent */
+             long ru_msgrcv;          /* messages received */
+             long ru_nsignals;        /* signals received */
+             long ru_nvcsw;           /* voluntary context switches */
+             long ru_nivcsw;          /* involuntary context switches */
+};
+int getrusage(int who, struct rusage *r_usage);
+]])
+
+Profiler.time = ffi.new("struct rusage")
+
 
 function Profiler.new()
    local p = { }
@@ -110,12 +141,12 @@ function Profiler:printReport(type)
       return (a.forwardMem + a.backwardMem) > (b.forwardMem + b.backwardMem)
    end)
    print("")
-   print(string.format("[autograd] average forward Memory: %.2fms", (totalFMem / (self.times + 1)) * 1000.0))
-   print(string.format("[autograd] average backward Memory: %.2fms", (totalBMem / (self.times + 1)) * 1000.0))
-   print(string.format("[autograd] average overall Memory: %.2fms", ((totalFMem + totalBMem) / (self.times + 1)) * 1000.0))
-   print(string.format("[autograd] average forward Memory: %.2fms", (totalFMem / (self.times + 1)) * 1000.0))
-   print(string.format("[autograd] average backward Memory: %.2fms", (totalBMem / (self.times + 1)) * 1000.0))
-   print(string.format("[autograd] average overall Memory: %.2fms", ((totalFMem + totalBMem) / (self.times + 1)) * 1000.0))
+   print(string.format("[autograd] average forward Memory: %.2f mb", (totalFMem / (self.times + 1)/1024) ))
+   print(string.format("[autograd] average backward Memory: %.2f mb", (totalBMem / (self.times + 1)/1024) ))
+   print(string.format("[autograd] average overall Memory: %.2f mb", ((totalFMem + totalBMem) / (self.times + 1)/1024) ))
+   print(string.format("[autograd] average forward Memory: %.2f mb", (totalFMem / (self.times + 1)/1024)))
+   print(string.format("[autograd] average backward Memory: %.2f mb", (totalBMem / (self.times + 1)/1024)))
+   print(string.format("[autograd] average overall Memory: %.2f mb", ((totalFMem + totalBMem) / (self.times + 1) / 1024) ))
    print("[autograd] top operations:")
    if type == "detailed" then
       print("[autograd] " .. string.rep("=", 80))

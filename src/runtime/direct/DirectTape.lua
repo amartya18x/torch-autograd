@@ -7,6 +7,7 @@ local assignmentMap = { }
 local reverseAssignmentMap = { }
 local currentTape = { }
 local currentProfiler = nil
+local ffi = require 'ffi'
 
 -- A wrapper for a function
 -- Anytime we try to apply a function to some arguments,
@@ -51,17 +52,18 @@ function nodeApply(fun, gradFun, ...)
       end
       local profileId = nil
       local startTime = sys.clock()
-      local startMem
-      _,_, startMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
+      ffi.C.getrusage(0,  currentProfiler.time)
+      local startMem =  tonumber(currentProfiler.time.ru_maxrss) 
+     
       local value = fun.fn(table.unpack(values))
       if currentProfiler ~= nil then
          local elapsedTime = sys.clock() - startTime
-         local endMem
-      _,_, endMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
-         local takenMem  = tonumber(endMem) - tonumber(startMem)
+         ffi.C.getrusage(0,  currentProfiler.time)
+         local endMem = tonumber(currentProfiler.time.ru_maxrss)  
+     
+         local takenMem  = endMem - startMem
          profileId = currentProfiler:mark(fun, 2)
          currentProfiler:measureForward(profileId, elapsedTime, takenMem)
-        print(takenMem)
       end
       local node = nil
       local tape = currentTape
@@ -158,13 +160,13 @@ function DirectTape.gradOnly(tape, arg, argnum, allAns, gradOutput)
             local gf = (node.gradFun or {})[iarg]
             if gf ~= nil then
                local startTime = sys.clock()
-               local startMem
-	           _,_, startMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
+               ffi.C.getrusage(0,  currentProfiler.time)
+               local startMem = tonumber(currentProfiler.time.ru_maxrss) 
                local gradUpdate = (gf)(node.outgrad, node.value, table.unpack(node.argValues))
-               local endMem
-               _,_, endMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
+               ffi.C.getrusage(0,  currentProfiler.time)
+               local endMem =  tonumber(currentProfiler.time.ru_maxrss) 
                elapsedTime = elapsedTime + (sys.clock() - startTime)
-               takenMem = takenMem + (tonumber(endMem)-tonumber(startMem))
+               takenMem = takenMem + (endMem - startMem)
                if gradUpdate then
                   if thisArg.outgrad == nil or thisArg.outgrad == 0 then
                      thisArg.outgrad = gradUpdate
@@ -194,13 +196,13 @@ function DirectTape.gradOnly(tape, arg, argnum, allAns, gradOutput)
                   end
                end
                local startTime = sys.clock()
-               local startMem
-	           _,_, startMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
+               ffi.C.getrusage(0,  currentProfiler.time)
+               local startMem = tonumber(currentProfiler.time.ru_maxrss)
                local gradUpdate = (node.gradFun[iarg])(node.outgrad, node.value, table.unpack(node.argValues))
-               local endMem
-	           _,_, endMem = utils.executeex("ps -eo size,command --sort -size | grep luajit | awk '(NR==1){ hr=$1/1024 ; printf(hr) }'")
+               ffi.C.getrusage(0,  currentProfiler.time)
+               local endMem = tonumber(currentProfiler.time.ru_maxrss) 
                elapsedTime = elapsedTime + (sys.clock() - startTime)
-               takenMem = takenMem + (tonumber(endMem) - tonumber(startMem))
+               takenMem = takenMem + (endMem - startMem)
                local la = #thisArg
                for isubArg=1,la do
                   if gradUpdate[isubArg] then
